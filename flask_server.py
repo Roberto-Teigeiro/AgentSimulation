@@ -44,12 +44,5 @@ def upload_image():
         print(f"Error processing image: {e}")
         return jsonify({"status": "error", "message": "Failed to process image"}), 400
 
-@app.route('/get_image', methods=['GET'])
-def get_image():
-    # Open the saved image and send it as an HTTP response
-    with open("received_image.png", "rb") as f:
-        image_data = f.read()
-    return image_data, 200, {'Content-Type': 'image/png'}
-
 if __name__ == "__main__":
     app.run(debug=True)
