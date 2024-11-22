@@ -5,21 +5,50 @@ from PIL import Image
 
 app = Flask(__name__)
 
-agent_data = {"x": 0, "z": 0, "angle": 0}  # Include angle in the data
+# In-memory storage for agent positions
+agent_positions = {}
 
 @app.route('/update_position', methods=['POST'])
 def update_position():
-    global agent_data
     data = request.get_json()
-    if "x" in data and "z" in data and "angle" in data:
-        agent_data = data
-        return jsonify({"status": "success", "data": agent_data}), 200
+    agent_type = data.get('agent_type')
+    position = data.get('position')
+    
+    if agent_type and position:
+        # If position is a list, convert it to a dict
+        if isinstance(position, list):
+            if len(position) >= 2:
+                position_dict = {'x': position[0], 'y': position[1]}
+                # Optionally handle 'z' if a third element exists
+                if len(position) >= 3:
+                    position_dict['z'] = position[2]
+                agent_positions[agent_type] = position_dict
+                print(f"{agent_type} position updated: {position_dict}")
+                return jsonify({'status': 'success'}), 200
+            else:
+                print(f"Invalid position list for {agent_type}: {position}")
+                return jsonify({'status': 'failure', 'reason': 'Invalid position list length'}), 400
+        # Ensure position is a dictionary with 'x' and 'y'
+        elif isinstance(position, dict) and 'x' in position and 'y' in position:
+            agent_positions[agent_type] = position
+            print(f"{agent_type} position updated: {position}")
+            return jsonify({'status': 'success'}), 200
+        else:
+            print(f"Invalid position format for {agent_type}: {position}")
+            return jsonify({'status': 'failure', 'reason': 'Invalid position format'}), 400
     else:
-        return jsonify({"status": "error", "message": "Invalid data"}), 400
+        return jsonify({'status': 'failure', 'reason': 'Invalid data'}), 400
+@app.route('/get_positions', methods=['GET'])
+def get_positions():
+    return jsonify(agent_positions), 200
 
-@app.route('/position', methods=['GET'])
-def get_position():
-    return jsonify(agent_data)
+@app.route('/get_position/<agent_type>', methods=['GET'])
+def get_position(agent_type):
+    position = agent_positions.get(agent_type)
+    if position:
+        return jsonify(position), 200
+    else:
+        return jsonify({'error': f"Agent '{agent_type}' not found."}), 404
 
 @app.route('/upload_image', methods=['POST'])
 def upload_image():
@@ -45,4 +74,4 @@ def upload_image():
         return jsonify({"status": "error", "message": "Failed to process image"}), 400
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=True, host='0.0.0.0', port=5000)

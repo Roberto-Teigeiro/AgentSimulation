@@ -1,57 +1,100 @@
+using System.Collections;
 using UnityEngine;
 using UnityEngine.Networking;
-using System.Collections;
+using Newtonsoft.Json;
 
-public class AgentController : MonoBehaviour
+public class PersonMovement : MonoBehaviour
 {
-    public string serverUrl = "http://127.0.0.1:5000/position"; // Flask server endpoint
-    public float updateInterval = 0.1f;  // How often to fetch data (in seconds)
-    public float radius = 5f;  // Radius of the circle the agent will move in
-    public float speed = 1f;   // Speed of movement around the circle
-    public float cameraDistance = 10f; // Camera's initial distance from the agent
+    [Header("Server Settings")]
+    [Tooltip("Base URL of the Flask server (e.g., http://localhost:5000)")]
+    public string serverBaseUrl = "http://localhost:5000";
 
-    private Vector3 agentPosition;
-    private float agentAngle;
-    private float height = 2f; // Height offset for the agent
+    [Header("Fetch Settings")]
+    [Tooltip("Interval in seconds between each fetch")]
+    public float fetchInterval = 1f;
+
+    [Header("Movement Settings")]
+    [Tooltip("Speed at which the GameObject moves towards the target position")]
+    public float moveSpeed = 5f;
+
+    [Header("Agent Settings")]
+    [Tooltip("Type of the agent (e.g., Drone, Robber, Camera)")]
+    public string agentType; // Assign this in the Inspector for each GameObject
+
+    private Vector3 targetPosition;
 
     void Start()
     {
-        StartCoroutine(UpdateAgentPosition());
+        if (string.IsNullOrEmpty(agentType))
+        {
+            Debug.LogError($"agentType not set for GameObject '{gameObject.name}'. Please assign an agent type in the Inspector.");
+            enabled = false; // Disable the script to prevent errors
+            return;
+        }
+
+        // Initialize targetPosition to the current position at start
+        targetPosition = transform.position;
+
+        StartCoroutine(FetchPositionRoutine());
     }
 
-    IEnumerator UpdateAgentPosition()
+    /// <summary>
+    /// Coroutine to periodically fetch the agent's position from the server.
+    /// </summary>
+    IEnumerator FetchPositionRoutine()
     {
         while (true)
         {
-            UnityWebRequest request = UnityWebRequest.Get(serverUrl);
-            yield return request.SendWebRequest();
-
-            if (request.result == UnityWebRequest.Result.Success)
-            {
-                string json = request.downloadHandler.text;
-                PositionData positionData = JsonUtility.FromJson<PositionData>(json);
-
-                // Update agent's position and rotation
-                agentPosition = new Vector3(positionData.x, height, positionData.z);  // Y is constant (height)
-                transform.position = agentPosition;
-
-                agentAngle = positionData.angle;  // Retrieve angle
-                transform.rotation = Quaternion.Euler(0, agentAngle, 0);  // Rotate around Y-axis for agent
-            }
-            else
-            {
-                Debug.LogError("Error fetching position: " + request.error);
-            }
-
-            yield return new WaitForSeconds(updateInterval);
+            yield return StartCoroutine(FetchPosition());
+            yield return new WaitForSeconds(fetchInterval);
         }
     }
 
-    [System.Serializable]
-    public class PositionData
+    /// <summary>
+    /// Sends a GET request to fetch the agent's current position.
+    /// </summary>
+    /// <returns></returns>
+    IEnumerator FetchPosition()
     {
-        public float x;    // X-coordinate of the agent
-        public float z;    // Z-coordinate of the agent
-        public float angle; // Angle (in degrees) of the agent
+        string url = $"{serverBaseUrl}/get_position/{agentType}";
+        UnityWebRequest request = UnityWebRequest.Get(url);
+        yield return request.SendWebRequest();
+
+        if (request.result == UnityWebRequest.Result.Success)
+        {
+            string jsonResponse = request.downloadHandler.text;
+
+            try
+            {
+                Position pos = JsonConvert.DeserializeObject<Position>(jsonResponse);
+
+                // Set the new target position instead of directly updating the transform
+                targetPosition = new Vector3(pos.x, transform.position.y, pos.y); // Map y to z
+
+                Debug.Log($"{agentType} position updated to: {targetPosition}");
+            }
+            catch (JsonException e)
+            {
+                Debug.LogError($"JSON Deserialization Error: {e.Message}");
+                Debug.LogError($"Received JSON: {jsonResponse}");
+            }
+        }
+        else
+        {
+            Debug.LogError($"Failed to fetch position for '{agentType}': {request.error}");
+        }
     }
+
+    void Update()
+    {
+        // Smoothly move towards the target position
+        transform.position = Vector3.Lerp(transform.position, targetPosition, moveSpeed * Time.deltaTime);
+    }
+}
+
+[System.Serializable]
+public class Position
+{
+    public float x;
+    public float y;
 }
