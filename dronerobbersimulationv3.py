@@ -438,7 +438,7 @@ class SecurityPersonnelAgent(ap.Agent):
 """## Additional functions"""
 
 def send_position(agent_type, position):
-    return
+    
     url = 'http://localhost:5000/update_position'
     payload = {
         'agent_type': agent_type,
