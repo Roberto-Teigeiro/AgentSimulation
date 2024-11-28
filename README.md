@@ -1,6 +1,7 @@
 # Evidence 2 - Intermediate Delivery
 Link to updated Documentation file: https://docs.google.com/document/d/1hSUCKd3A8fr8T-vvwi1aRbJVe3X8QsGIqKmgDlEuuBk/edit?usp=sharing 
 Link to Unity assets and world: https://drive.google.com/drive/folders/1D504VsSRE-t0EKTkW0W09vwq0rtGZ9k1
+Updated Unity assets: https://drive.google.com/file/d/1MNiD5gwse-uhSs_buf1iM-ef53whL5AZ/view?usp=sharing
 ## Modeling of Multi-Agent Systems with Computer Graphics (Gpo 301)
 This information is also found in .pdf file in repository
 This is part of the final delivarable evidence
