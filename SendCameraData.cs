@@ -1,3 +1,4 @@
+// CameraCapture.cs
 using UnityEngine;
 using System.Collections;
 using UnityEngine.Networking;
@@ -5,14 +6,22 @@ using System.IO;
 
 public class CameraCapture : MonoBehaviour
 {
-    public string serverUrl = "http://127.0.0.1:5000/upload_image"; // Flask server endpoint
+    [Header("Server Settings")]
+    [Tooltip("Base URL of the Flask server (e.g., http://localhost:5000)")]
+    public string serverBaseUrl = "http://127.0.0.1:5000"; // Flask server base URL
+
+    [Header("Agent Settings")]
+    [Tooltip("Type of the agent (e.g., Drone, Robber, Camera)")]
+    public string agentType = "SecurityAgent"; // Assign this in the Inspector
+
+    [Header("Camera Settings")]
+    [Tooltip("The name of the camera in the scene")]
     public string cameraName = "SecurityAgent"; // The name of the camera in the scene
 
     private Camera cameraToCapture;
 
     void Start()
     {
-        // Get the camera by its name
         cameraToCapture = GameObject.Find(cameraName).GetComponent<Camera>();
 
         if (cameraToCapture == null)
@@ -44,9 +53,21 @@ public class CameraCapture : MonoBehaviour
             byte[] imageBytes = texture.EncodeToPNG();
             string base64Image = System.Convert.ToBase64String(imageBytes);
 
+            // Prepare JSON payload
+            string filename = $"{agentType}_vision.png";
+            ImagePayload payload = new ImagePayload
+            {
+                image = base64Image,
+                filename = filename
+            };
+            string jsonPayload = JsonUtility.ToJson(payload);
+
+            // Construct the server URL with agentType
+            string url = $"{serverBaseUrl}/send_vision/{agentType}";
+
             // Send image data to Flask server
-            UnityWebRequest request = new UnityWebRequest(serverUrl, "POST");
-            byte[] jsonToSend = new System.Text.UTF8Encoding().GetBytes("{\"image\":\"" + base64Image + "\"}");
+            UnityWebRequest request = new UnityWebRequest(url, "POST");
+            byte[] jsonToSend = new System.Text.UTF8Encoding().GetBytes(jsonPayload);
             request.uploadHandler = new UploadHandlerRaw(jsonToSend);
             request.downloadHandler = new DownloadHandlerBuffer();
             request.SetRequestHeader("Content-Type", "application/json");
@@ -66,8 +87,16 @@ public class CameraCapture : MonoBehaviour
             cameraToCapture.targetTexture = null;
             RenderTexture.active = null;
             Destroy(renderTexture);
+            Destroy(texture);
 
             yield return new WaitForSeconds(0.1f); // Send an image every 0.1s (10 FPS)
         }
+    }
+
+    [System.Serializable]
+    public class ImagePayload
+    {
+        public string image;
+        public string filename;
     }
 }
