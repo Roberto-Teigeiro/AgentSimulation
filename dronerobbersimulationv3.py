@@ -393,6 +393,7 @@ class SecurityPersonnelAgent(ap.Agent):
             robber_position (tuple): The location of the detected robber.
         """
         print(f"Robber confirmed at {robber_position}. Issuing a general alarm.")
+
         self.simulate_general_alarm(drone, robber_position)
 
     def simulate_general_alarm(self, drone, robber_position):
@@ -400,13 +401,24 @@ class SecurityPersonnelAgent(ap.Agent):
         print("General alarm issued. Security personnel have resolved the alert.")
         self.in_communication = False
         self.alert_handled = True
-
+        url = 'http://localhost:5000/alert_alarm'
+        payload = {
+                    'alarm_alerted': True,
+                    'position': robber_position
+                }        
+        try:
+            response = requests.post(url, json=payload)
+            if response.status_code == 200:
+                print("Alarm alert sent successfully.")
+            else:
+                print("Failed to send alarm alert.")
+        except requests.exceptions.ConnectionError:
+            print("Failed to connect to the Flask server.")
         # Find the robber at the specified position
         robber_to_remove = next(
             (robber for robber in self.model.robber if self.model.grid.positions[robber] == robber_position),
             None
         )
-
         if robber_to_remove:
             self.model.grid.remove_agents(robber_to_remove)
             self.model.robber.remove(robber_to_remove)
