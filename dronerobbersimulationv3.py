@@ -304,6 +304,7 @@ class CameraAgent(ap.Agent):
 
     def setup(self):
         """Initialize the camera's attributes."""
+        #self.name = f"CCTV{self.id + 1}"  # Assign unique name
         self.detection_range = 18  # Larger range than the drone
         self.alerts_sent = 0  # Tracks the number of alerts sent
         self.agent_type = 1  # Unique type identifier for visualization
@@ -311,10 +312,21 @@ class CameraAgent(ap.Agent):
 
     def detect_robber(self):
         """Detects the robber within the camera's perception range."""
-        # use neighbors() to find all agents within the specified range
+        # Check for suspicious objects via computational vision with 20% probability
+        if random.random() < 0.4:
+            try:
+                response = requests.get(f"http://localhost:5000/check_image/{self.name}")
+                data = response.json()
+                sus_detected = data.get("sus_object_detected", False)
+                if sus_detected:
+                    self.alerts_sent += 1  # Example action based on detection
+            except requests.RequestException:
+                pass
+
+        # Always use neighbors() to find all agents within the specified range
         detected_robber = next(
             (entity for entity in self.model.grid.neighbors(self, distance=self.detection_range)
-             if isinstance(entity, Robber)),
+            if isinstance(entity, Robber)),
             None  # Default to None if no robber is detected
         )
         return detected_robber
@@ -323,11 +335,11 @@ class CameraAgent(ap.Agent):
         """Sends an alert to the drone with the robber's location."""
         robber_position = self.model.grid.positions[robber]
         alert = {'type': 'camera_signal',
-                 'camera' : self,
+                 'camera': self.name,  # Use camera name
                  'location': robber_position}
         self.model.alerts.append(alert)  # Add the alert to the model's alert system
         self.alerts_sent += 1
-        print(f"Camera at {self.model.grid.positions[self]} sent an alert: Robber detected at {robber_position}")
+        print(f"{self.name} at {self.model.grid.positions[self]} sent an alert: Robber detected at {robber_position}")
 
     def step(self):
         if not self.model.running:
@@ -392,20 +404,16 @@ class SecurityPersonnelAgent(ap.Agent):
             robber_position (tuple): The location of the detected robber.
         """
         print(f"Robber confirmed at {robber_position}. Issuing a general alarm.")
+
         self.simulate_general_alarm(drone, robber_position)
 
     def simulate_general_alarm(self, drone, robber_position):
         """Simulates issuing a general alarm and removes the confirmed robber."""
         print("General alarm issued. Security personnel have resolved the alert.")
-        self.in_communication = False
-        self.alert_handled = True
-
-        # Find the robber at the specified position
         robber_to_remove = next(
             (robber for robber in self.model.robber if self.model.grid.positions[robber] == robber_position),
             None
         )
-
         if robber_to_remove:
             self.model.grid.remove_agents(robber_to_remove)
             self.model.robber.remove(robber_to_remove)
@@ -413,6 +421,23 @@ class SecurityPersonnelAgent(ap.Agent):
         else:
             print(f"No robber found at {robber_position} to remove.")
 
+        self.in_communication = False
+        self.alert_handled = True
+        url = 'http://localhost:5000/alert_alarm'
+        payload = {
+                    'alarm_alerted': True,
+                    'position': robber_position
+                }        
+        try:
+            response = requests.post(url, json=payload)
+            if response.status_code == 200:
+                print("Alarm alert sent successfully.")
+            else:
+                print("Failed to send alarm alert.")
+        except requests.exceptions.ConnectionError:
+            print("Failed to connect to the Flask server.")
+        # Find the robber at the specified position
+       
         drone.receive_command("alert_resolved")  # Simulated command to drone
 
     def step(self):
@@ -420,8 +445,6 @@ class SecurityPersonnelAgent(ap.Agent):
         Defines the agent's behavior per simulation step.
         Reacts only if an alert is present and the drone signals for assistance.
         """
-        position = self.model.grid.positions[self]
-        send_position('SecurityPersonnel', position)
         if not self.in_communication and not self.alert_handled:
             # Check if the drone has sent a signal for help
             for alert in self.model.alerts[:]:
@@ -437,7 +460,6 @@ class SecurityPersonnelAgent(ap.Agent):
 """## Additional functions"""
 
 def send_position(agent_type, position):
-    return
     url = 'http://localhost:5000/update_position'
     payload = {
         'agent_type': agent_type,
@@ -483,8 +505,10 @@ def move_by(agent, step):
 class SurveillanceModel(ap.Model):
     def setup(self):
         """Initialize the simulation with agents and a shared environment."""
+        # Hardcoded world size
+        world_size = (100, 100)
+
         # Retrieve parameters
-        world_size = self.p.worldSize
         drone_count = self.p.droneAgents
         camera_count = self.p.cameraAgents
         robber_count = self.p.robberAgents
@@ -499,10 +523,28 @@ class SurveillanceModel(ap.Model):
         self.grid = ap.Grid(self, world_size, track_empty=True)
 
         # Place agents on the grid
-        self.grid.add_agents(self.drone, positions=[(world_size[0] // 2, world_size[1] // 2)])  # Drone at center
+        self.grid.add_agents(
+            self.drone, 
+            positions=[(world_size[0] // 2, world_size[1] // 2)]  # Drone at center
+        )
         self.grid.add_agents(self.robber, random=True)  # Place robber randomly
-        self.grid.add_agents(self.cameras, random=True)  # Place cameras randomly
-        self.grid.add_agents(self.security, positions=[(5, 5)])  # Fixed position for security personnel
+        for index, robber in enumerate(self.robber, start=1):
+            position = self.grid.positions[robber]
+            print(f"Robber{index} placed at position: {position}")
+
+        # Define fixed camera positions forming a triangle
+        camera_positions = self.calculate_camera_positions(camera_count)
+        self.cameras = ap.AgentList(self, camera_count, CameraAgent)
+        self.grid.add_agents(self.cameras, positions=camera_positions)
+
+        # Assign names to cameras
+        for idx, camera in enumerate(self.cameras, start=1):
+            camera.name = f"CCTVCAM{idx}"
+
+        self.grid.add_agents(
+            self.security, 
+            positions=[(5, 5)]  # Fixed position for security personnel
+        )
 
         # Initialize landing position for the drones
         for drone in self.drone:
@@ -510,6 +552,35 @@ class SurveillanceModel(ap.Model):
 
         # Create a shared alert system
         self.alerts = []
+
+    def calculate_camera_positions(self, camera_count):
+        """Calculate camera positions to form a triangle within the 100x100 grid."""
+        if camera_count < 3:
+            raise ValueError("At least 3 cameras are required to form a triangle.")
+        
+        # Define triangle vertices
+        vertices = [
+            (20, 20),    # Camera 1
+            (80, 20),    # Camera 2
+            (50, 80)     # Camera 3
+        ]
+        # If more than 3 cameras, distribute additional cameras along the triangle edges
+        additional_cameras = camera_count - 3
+        if additional_cameras > 0:
+            edge1 = self.interpolate_positions(vertices[0], vertices[1], additional_cameras // 2)
+            edge2 = self.interpolate_positions(vertices[1], vertices[2], additional_cameras - (additional_cameras // 2))
+            vertices.extend(edge1 + edge2)
+
+        return vertices[:camera_count]
+
+    def interpolate_positions(self, start, end, count):
+        """Interpolate positions between two points."""
+        positions = []
+        for i in range(1, count + 1):
+            x = start[0] + (end[0] - start[0]) * i / (count + 1)
+            y = start[1] + (end[1] - start[1]) * i / (count + 1)
+            positions.append((x, y))
+        return positions
 
     def step(self):
         """Run the simulation for one step."""
@@ -534,9 +605,9 @@ parameters = {
     "droneAgents": 1,         # Number of drones
     "cameraAgents": 3,        # Number of cameras
     "robberAgents": 1,        # Number of robbers
+    "steps": 60,              # Maximum steps
     "worldSize": (100, 100),    # Grid size (width, height)
-    "steps": 50,              # Maximum steps
-    "seed": 16               # Random seed for reproducibility
+    "seed": 75,  # Generates a random seed each run
 }
 
 # Create figure for animation
