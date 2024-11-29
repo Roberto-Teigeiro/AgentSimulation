@@ -119,7 +119,7 @@ def alert_alarm():
 def get_alarm_status():
     return jsonify(alarm_status), 200
 
-@app.route('/check_image/<camera_name>', methods=['POST'])
+@app.route('/check_image/<camera_name>', methods=['GET'])
 def check_image(camera_name):
     try:
         # Construct the filename based on the camera name
@@ -143,14 +143,34 @@ def check_image(camera_name):
         cv2.imwrite(output_path, annotated_frame)
         print(f"Annotated image saved to: {output_path}")
 
+        # Initialize positions list
+        positions = []
+
         # Check if any objects are detected
         if results[0].boxes:
-            return jsonify({'status': 'success', 'sus_object_detected': True, 'annotated_image': output_path}), 200
+            for box in results[0].boxes:
+                x1, y1, x2, y2 = box.xyxy[0]
+                positions.append({
+                    'x1': int(x1.item()),
+                    'y1': int(y1.item()),
+                    'x2': int(x2.item()),
+                    'y2': int(y2.item())
+                })
+            return jsonify({
+                'status': 'success',
+                'sus_object_detected': True,
+                'annotated_image': output_path,
+                'positions': positions
+            }), 200
         else:
-            return jsonify({'status': 'success', 'sus_object_detected': False, 'annotated_image': output_path}), 200
+            return jsonify({
+                'status': 'success',
+                'sus_object_detected': False,
+                'annotated_image': output_path,
+                'positions': positions
+            }), 200
     except Exception as e:
         print(f"Error checking image: {e}")
         return jsonify({'status': 'error', 'message': 'Failed to check image'}), 400
-
 if __name__ == "__main__":
     app.run(debug=True, host='0.0.0.0', port=5000)
